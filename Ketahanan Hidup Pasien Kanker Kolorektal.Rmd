@@ -1,0 +1,250 @@
+---
+title: "Aplikasi Analisis Ketahanan Hidup (Contoh Kasus : Data 30 Pasien Kanker Kolorektal)"
+author: "Nadhifan Humam F. (nadhifanhf@gmail.com)"
+output:
+  html_document:
+    toc: true
+    number_sections: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+<style type = 'text/css'>
+h1 {color:#1a2451;}
+h2 {color:#ffbd4a;}
+h3 {color:#DCE35B;}
+</style>
+
+<style>
+body {
+text-align: justify
+} </style>
+
+
+![](2413576.jpg)
+
+
+<a href="https://www.freepik.com/free-photos-vectors/heart">Heart photo created by freepik - www.freepik.com</a>
+
+
+# Analisis Ketahanan Hidup (Survival Analysis)
+
+Analisis ketahanan hidup (*survival analysis*) adalah kumpulan prosedur statistik yang digunakan untuk mengukur dan menganalisis data waktu hingga terjadinya suatu peristiwa (*event*). Waktu yang dimaksud dapat berupa tahun, bulan, minggu, atau hari dimulai dari objek masuk ke dalam waktu pengamatan; sedangkan peristiwa (*event*) merupakan peristiwa yang menjadi fokus penelitian seperti : kematian, kesembuhan, terjangkitnya suatu penyakit, atau kejadian menarik yang terjadi pada objek penelitian (Kleinbaum dan Klein, 2012). Selain status *event* dikenal pula status *censored* dalam analisis ketahanan hidup. *Censored* adalah status yang diberikan kepada objek yang tidak mengalami *event* atau hilang selama penelitian. Kedua informasi ini tetap dimasukkan ke dalam proses analisis. Hal inilah yang membedakan analisis ketahanan hidup dengan metode regresi klasik yang dimana hanya memasukkan objek yang ditekahui statusnya saja ke dalam proses analisis. Pada analisis ketahanan hidup, variabel respons yang digunakan adalah variabel *time-to-event*, yaitu status objek pengamatan (*event* atau *censored*) beserta waktu terjadinya.
+
+Sebagai gambaran perbedaan antara analisis ketahanan hidup dengan metode regresi klasik adalah pada kasus penelitian terhadap pasien kanker di suatu rumah sakit. Misalkan pada saat penelitian berlangsung, terdapat pasien yang melarikan diri dari rumah sakit atau mengalami kematian namun bukan disebabkan akibat kanker yang dideritanya. Pada analisis regresi klasik, informasi dari pasien ini tidak dimasukkan dalam proses analisis sedangkan pada analisis ketahanan hidup informasi ini tetap dimasukkan dalam proses analisis. Pasien yang mengalami kematian diberi label *event* sedangkan pasien yang tidak mengalami kematian atau mengalami kematian namun bukan karena kankernya atau yang tidak dapat diamati lagi diberi label *censored*.
+
+Model *Cox Proportional Hazard* merupakan model yang cukup sering digunakan dalam analisis ketahanan hidup. Pada model ini distribusi dari *survival time* tidak diasumsikan mengikuti distribusi tertentu dan *hazard ratio* objek pengamatan konstan sepanjang waktu. Selain itu, terdapat Model parametrik dimana pada model ini, distribusi *survival time* diasumsikan mengikuti suatu distribusi tertentu. Beberapa model parametrik pada analisis ketahanan hidup yang sering digunakan adalah *Weibull*, *Gompertz*, dan *Eksponensial*.
+
+# Studi Kasus : Data Pasien Kanker Usus/Kolorektal
+
+**Catatan : Data yang diambil adalah data yang peneliti dapatkan saat mendapat tugas kuliah analisis ketahanan hidup. Data ini digunakan hanya untuk latihan dan kesimpulan yang didapat mungkin saja tidak menggambarkan keadaan pasien kanker kolorektal yang sesungguhnya**
+
+Contoh ini menggunakan data 30 pasien kanker kolorektal/usus sebagai unit analisisnya. Peristiwa (event) dalam contoh ini adalah pasien kanker kolorektal yang mengalami kematian selama masa pengamatan. Selain itu ingin diketahui variabel apa saja yang berpengaruh signifikan terhadap status kematian pasien. Variabel tersebut adalah umur pasien dalam tahun, jenis kelamin pasien, stadium awal pada saat terdeteksi kanker usus, dan jenis treatment yang diberikan. Rincian variabel yang digunakan dalam contoh ini terlampir sebagai berikut :
+
+
+| Nama Variabel  |            Keterangan Variabel           |               Kategori              |
+|:--------------:|:----------------------------------------:|:-----------------------------------:|
+| Pasien         | Nomor urut pasien                        | -                                   |
+| Umur           | Umur pasien                              | Muda (<= 50 tahun), Tua (> 50 tahun  |
+| Kelamin        | Jenis kelamin pasien                     | Perempuan, Laki-laki                 |
+| Stadium        | Stadium awal pada saat terdeteksi kanker | Parah, Sangat Parah                  |
+| Treatment      | Jenis treatment yang diberikan           | Baru Standar                        |
+| Survival_time  | Waktu hidup pasien dalam bulan           | -                                   |
+| Status         | Status pada akhir pengamaattan           | TRUE (Death/Event),  FALSE (Censored) |
+
+```{r, include=FALSE, warning=FALSE}
+library(readr)
+library(dplyr)
+library(DT)
+mydata <- read.csv('Dataset_1.csv')
+mydata <- mydata %>%
+  dplyr::select(-Pasien)
+Stadium <- if_else(
+  mydata$Stadium == 2  , 'Parah', if_else(
+    mydata$Stadium == '3A' | mydata$Stadium == '3B', 'Parah', 'Sangat Parah'
+  )
+)
+
+mydata$Stadium <- as.factor(Stadium)
+mydata$Status <- if_else(mydata$Status == 'death', TRUE, FALSE)
+mydata$Umur <- if_else(mydata$Umur < 51, 'Muda', 'Tua')
+mydata$Umur <- as.factor(mydata$Umur)
+```
+
+```{r, echo=FALSE}
+datatable(mydata)
+```
+
+# Pembahasan
+
+## Load library yang digunakan
+
+```{r, warning=FALSE}
+library(dplyr) #Data processing
+library(survival) #Cox PH Model and Weibull Model
+library(survminer) #Visualisasi KM
+library(eha) #Survival Analysis Model
+```
+
+## Fungsi Survival Kaplan-Meier
+
+Berdasarkan data 30 pasien kanker kolorektal/usus terdapat 10 pasien yang mengalami kematian (*event*) sedangkan 20 pasien tidak mengalami kematian (*censored*). Langkah pertama yang bisa digunakan dalam memodelkan dalam *survival analysis* adalah memodelkan waktu ketahanan hidup pasien kanker kolorektal dengan metode Kaplan Meier. Kaplan Meier adalah metode yang digunakan untuk membuat fungsi ketahanan hidup menurut kategori pada satu variabel. Dalam metode Kaplan Meier dikenal Uji Log Rank yang bertujuan untuk menguji ada/tidaknya perbedaan waktu ketahanan hidup antar kategori pada satu variabel. Kelebihan dari metode ini adalah mudah diterapkan, namun kelemahannya adalah tidak dapat mengetahui pengaruh/signifikansi antar berbagai variabel prediktor. Hasil analisis dengan metode Kaplan Meier pasien kanker kolorektal adalah sebagai berikut :
+
+* **Umur** 
+
+```{r}
+#Umur
+fit1 <- survfit(formula = Surv(Survival_time, Status) ~ Umur, data = mydata)
+ggsurvplot(fit1, pval = TRUE, pval.method = TRUE, title ='Kurva Survival Kaplan Meier Pasien Kanker kolorektal 
+Berdasarkan Umur')
+```
+
+Berdasarkan kurva diatas, secara umum terlihat bahwasanya kurva survival pasien muda berada diatas kurva survival pasien muda. Namun, hasil pengujian Log Rank menunjukkan bahwa kedua kurva tidak menunjukkan perbedaan yang signifikan. Hal ini mengindikasikan bahwa tidak terdapat perbedaan pada waktu ketahanan hidup penderita kanker kolorektal pada pasien muda maupun pasien tua. 
+
+* **Jenis Kelamin**
+
+```{r}
+#Jenis Kelamin
+fit2 <- survfit(formula = Surv(Survival_time, Status) ~ Kelamin, data = mydata)
+ggsurvplot(fit2, pval = TRUE, pval.method = TRUE, title ='Kurva Survival Kaplan Meier Pasien Kanker kolorektal 
+Berdasarkan Jenis Kelamin')
+```
+
+Berdasarkan kurva diatas, secara umum terlihat bahwasanya kurva survival pasien perempuan berada diatas kurva survival pasien laki-laki. Namun, hasil pengujian Log Rank menunjukkan bahwa kedua kurva tidak menunjukkan perbedaan yang signifikan. Hal ini mengindikasikan bahwa tidak terdapat perbedaan pada waktu ketahanan hidup penderita kanker kolorektal pada pasien perempuan maupun pasien laki-laki. 
+
+* **Treatment**
+
+```{r}
+#Treatment
+fit3 <- survfit(formula = Surv(Survival_time, Status) ~ Treatment, data = mydata)
+ggsurvplot(fit3, pval = TRUE,pval.method = TRUE, title ='Kurva Survival Kaplan Meier Pasien Kanker kolorektal 
+Berdasarkan Treatment')
+```
+
+Berdasarkan kurva diatas, secara umum terlihat bahwasanya kurva survival pasien dengan treatment baru berada diatas kurva survival pasien dengan treatment standar. Namun, hasil pengujian Log Rank menunjukkan bahwa kedua kurva tidak menunjukkan perbedaan yang signifikan. Hal ini mengindikasikan bahwa tidak terdapat perbedaan pada waktu ketahanan hidup penderita kanker kolorektal pada pasien dengan treatment baru maupun pasien dengan treatment standar. 
+
+* **Stadium**
+
+```{r}
+#Stadium
+fit4 <- survfit(formula = Surv(Survival_time, Status) ~ Stadium, data = mydata)
+ggsurvplot(fit4, pval = TRUE, pval.method = TRUE, title ='Kurva Survival Kaplan Meier Pasien Kanker kolorektal 
+Berdasarkan Stadium')
+```
+
+Berdasarkan kurva diatas, secara umum terlihat bahwasanya kurva survival pasien dengan stadium parah berada diatas kurva survival pasien dengan stadium sangat parah. Namun, hasil pengujian Log Rank menunjukkan bahwa kedua kurva tidak menunjukkan perbedaan yang signifikan. Hal ini mengindikasikan bahwa tidak terdapat perbedaan pada waktu ketahanan hidup penderita kanker kolorektal pada pasien dengan stadium parah maupun pasien dengan stadium sangat parah. 
+
+
+## Pengujian Asumsi *Proportional Hazard* (PH)
+
+Pendekatan yang digunakan dalam membentuk model *Cox Proportional Hazard* maupun Model Parametrik adalah hazard ratio. Hazard ratio adalah kecenderungan pasien untuk mengalami kematian. Hal ini agak berbeda dengan Kaplan-Meier yang menggunakan pendekatan fungsi survival yang menyatakan peluang pasien kanker kolorektal untuk dapat terus hidup.
+
+
+Sebelum membuat Model *Cox Proportional Hazard* maupun Model Parametrik, maka dilakukan uji asumsi PH. Pada Model *Cox Proportional Hazard* diasumsikan bahwa hazard ratio antar individu adalah konstan/sama dari waktu ke waktu. Sedangkan pada Model Parametrik, diasumsikan digunakan model yang dapat mengakomomodir asumsi PH. 
+
+```{r}
+#Data Asli
+cph <- coxph(formula = Surv(Survival_time, Status) ~ Kelamin + Umur + Stadium + Treatment , data = mydata) 
+cox.zph(cph)
+```
+
+Hasil pengujian asumsi PH menunjukkan bahwa dari 4 variabel yang diuji (umur, jenis kelamin, stadium, dan treatment) hanya jenis kelamin yang tidak memenuhi asumsi PH dengan tingkat signifikansi 5 persen. Namun, untuk menghindari kehilangan informasi dari data, diputuskan untuk membuat strata berdasarkan jenis kelamin pasien kemudian melakukan analisis pada masing-masing strata.
+
+Setelah strata terbentuk, kemudian dilakukan pengujian asumsi PH pada masing-masing strata.
+```{r}
+#Strata Pasien Laki-laki
+mydata_laki <- mydata %>% filter(Kelamin == 'Male')
+cph_lk <- coxph(formula = Surv(Survival_time, Status) ~ Umur + Stadium + Treatment, data = mydata_laki) 
+cox.zph(cph_lk)
+```
+```{r, warning=FALSE}
+#Strata Perempuan
+mydata_pr <- mydata %>% filter(Kelamin == 'Female')
+
+cph_pr <- coxph(formula = Surv(Survival_time, Status) ~ Umur + Stadium + Treatment , data = mydata_pr) 
+cox.zph(cph_pr)
+```
+
+Hasil pengujian asumsi PH pada masing-masing strata menunjukkan bahwa dengan tingkat signifikansi 5 persen pada strata pasien laki-laki variabel treatment dan umur tidak memenuhi asumsi PH sedangkan pada strata perempuan tidak ada variabel yang tidak memenuhi asumsi PH. Oleh sebab itu, peneliti memutuskan untuk tidak memasukkan variabel treatment dan umur pada strata pasien laki-laki namun memasukkan semua variabel (treatment, umur, dan stadium) pada strata pasien perempuan. Peneliti tidak membuat strata kembali pada pasien laki-laki melihat jumlah observasi yang pada strata pasien laki-laki yang cukup kecil (15 observasi).
+
+## Pemilihan Model Terbaik
+
+Pemilihan model terbaik yang didasarkan pada nilai AIC. Model terbaik yang dipilih adalah model dengan nilai AIC terkecil. Hasil masing-masing model pada tiap kelompok ditunjukkan pada tabel berikut :
+
+* **Tabel 1.** Nilai AIC pada Strata Pasien Laki-laki
+
+| NO |     MODEL    |    AIC   |
+|:--:|:------------:|:--------:|
+| 1  | Weibull      | 59,78006 |
+| 2  | Gompertz     | 61,06305 |
+| 3  | Eksponensial | 63,92940 |
+| 4  | Cox PH       | 63,75866 |
+
+
+* **Tabel 2.** Nilai AIC pada Strata Pasien Perempuan
+
+| NO |     MODEL    |    AIC   |
+|:--:|:------------:|:--------:|
+| 1  | Weibull      | 33,91756 |
+| 2  | Gompertz     | 34,27219 |
+| 3  | Eksponensial | 34,27210 |
+| 4  | Cox PH       | 16,54349 |
+
+
+Berdasarkan kedua tabel diatas, maka dipilih model parametrik Weibull untuk strata pasien laki-laki dan model Cox PH untuk strata pasien perempuan karena memiliki nilai AIC terkecil dibandingkan model lainnya. 
+
+## Model Parametrik Weibull untuk Strata Pasien Laki-laki
+
+Di R, untuk membuat model Weibull dapat menggunakan fungsi `phreg` pada library `eha` kemudian mengisi argument 'weibull' pada parameter `dist`. 
+
+```{r}
+wei_lk <- phreg(formula = Surv(Survival_time, Status) ~
+                          Stadium, data = mydata_laki, dist ='weibull')
+wei_lk
+```
+
+Pengaruh variabel prediktor secara bersama-sama terhadap variabel respons diketahui melalui uji simultan (Likelihood Ratio Test). Dengan menggunakan tingkat signifikansi 5 persen, hasil uji simultan menunjukkan hasil yang tidak signifikan yang artinya tidak terdapat minimal satu variabel prediktor yang mempengaruhi waktu ketahanan hidup pasien kanker kolorektal. Namun, untuk mengetahui informasi lebih mendalam, selanjutnya dilakukan uji parsial (Wald Test) untuk mengetahui pengaruh masing-masing variabel prediktor. 
+
+
+Dari output diatas pula dapat diketahui risiko atau kecenderungan pasien kanker kolorektal untuk mengalami kematian. Nilai Hazard Ratio (HR) untuk variabel stadium sangat parah sebesar 6,166.  Hal ini dapat diartikan, dengan menganggap variabel lain konstan, pasien dengan stadium sangat parah memiliki risiko 6,166 kali lebih besar dibandingkan pasien dengan stadium parah untuk mengalami kematian. Namun, dilihat dari nilai p-value variabel stadium sangat parah yang lebih dari 5 persen, dapat dikatakan bahwasanya dengan tingkat signifikansi 5 persen, variabel stadium sangat parah tidak berpengaruh signifikan terhadap risiko kematian pada pasien kanker kolorektal pada laki-laki.
+
+## Model Cox PH untuk Strata Pasien Perempuan
+
+Di R, untuk membuat model Cox PH dapat menggunakan fungsi `coxph` pada library `survival`. 
+
+```{r}
+cph_pr <- coxph(formula = Surv(Survival_time, Status) ~
+                   Umur + Treatment + Stadium, data = mydata_pr) 
+cph_pr
+```
+
+Pengaruh variabel prediktor terhadap variabel respons diketahui melalui uji simultan (Likelihood Ratio Test). Dengan menggunakan tingkat signifikansi 5 persen, hasil uji simultan menunjukkan hasil yang tidak signifikan yang artinya tidak terdapat variabel prediktor yang mempengaruhi waktu ketahanan hidup pasien kanker kolorektal. Namun, untuk mengetahui informasi lebih mendalam, selanjutnya dilakukan uji parsial (Wald Test) untuk mengetahui pengaruh masing-masing variabel prediktor. 
+
+Dari output diatas pula dapat diketahui risiko atau kecenderungan pasien kanker kolorektal untuk mengalami kematian (nilai Exp(Coef)). Nilai Hazard Ratio (HR) untuk variabel umur tua sebesar 0,627. Hal ini dapat diartikan, dengan menganggap variabel lain konstan, pasien perempuan dengan umur tua memiliki risiko 0,627 kali lebih kecil dibandingkan pasien perempuan dengan umur muda untuk mengalami kematian. Dilihat dari nilai p-value variabel umur tua lebih dari 5 persen, dapat dikatakan bahwasanya dengan tingkat signifikansi 5 persen, variabel umur tua tidak berpengaruh signifikan terhadap risiko kematian pada pasien kanker kolorektal pada perempuan. Selanjutnya nilai Hazard Ratio (HR) untuk variabel stadium sangat parah sebesar 1,066. Hal ini dapat diartikan pula, dengan menganggap variabel lain konstan, pasien perempuan dengan stadium sangat parah memiliki risiko 1,066 kali lebih besar dibandingkan pasien perempuan dengan stadium parah untuk mengalami kematian. Namun, dilihat dari nilai p-value variabel stadium sangat parah yang lebih dari 5 persen, dapat dikatakan bahwasanya dengan tingkat signifikansi 5 persen, variabel stadium sangat parah tidak berpengaruh signifikan terhadap risiko kematian pada pasien kanker kolorektal pada perempuan. Kemudian nilai Hazard Ratio (HR) untuk variabel treatment standar sebesar 302 x 10 ^ 6. Hal ini dapat diartikan pula, dengan menganggap variabel lain konstan, pasien perempuan yang mendapat treatment standar memiliki risiko 302 x 10 ^ 6 kali lebih besar dibandingkan pasien perempuan yang mendapat treatment baru untuk mengalami kematian. Peneliti menduga nilai ini sangat besar sekali disebabkan dari data yang diperoleh , pada pasien perempuan, prevalensi kematian pada pasien yang mendapat treatment standar sebesar 75 persen sedangkan pada pasien yang mendapat treatment baru sebesar 0 persen. Namun, dilihat dari nilai p-value variabel treatment standar yang lebih dari 5 persen, dapat dikatakan bahwasanya dengan tingkat signifikansi 5 persen, variabel treatment standar tidak berpengaruh signifikan terhadap risiko kematian pada pasien kanker kolorektal pada perempuan.
+
+# Kesimpulan
+
+**Catatan : Data yang diambil adalah data yang peneliti dapatkan saat mendapat tugas kuliah analisis ketahanan hidup. Data ini digunakan hanya untuk latihan dan kesimpulan yang didapat mungkin saja tidak menggambarkan keadaan pasien kanker kolorektal yang sesungguhnya**
+
+Berdasarkan hasil penelitian, dari data 30 pasien kanker kolorektal, terdapat 10 pasien yang mengalami kematian (event of interest) sedangkan 20 pasien tidak mengalami kematian (sensor). Kemudian saat pembentukan model analisis ketahanan hidup, peneliti memutuskan untuk merapkan model yang berbeda berdasarkan jenis kelamin pasien kanker. Hal ini dilakukan untuk mengatasi permasalahan terlanggarnya asumsi PH dan meminimalkan kehilangan informasi pada data. Pada pasien laki-laki model terbaik diterapkan adalah model Weibull sedangkan pada pasien perempuan model terbaik yang diterapkan adalah model Cox Proportional Hazard. Pemilihan model terbaik didasarkan pada nilai AIC yang terkecil dibanding model lainnya pada masing-masing strata. Dari model yang terbentuk, ditunjukkan baik pada model pasien laki-laki maupun model pasien perempuan tidak terdapat variabel signifikan yang mempengaruhi waktu ketahanan hidup pasien kanker kolorektal.
+
+# Referensi
+
+* Sayuti Muhammad & Nouva. 2019. Kanker Kolorektal. Jurnal Averrous Vol.5 No.2.
+
+* Sari, Melissa Indah dkk.. 2019. Kemoterapi Adjuvan pada Kanker Kolorektal. Jurnal Kesehatan Andalas Vol. 8 No. 15.
+
+* Lubis, Muhammad Yamin dkk. 2015 Probabilitas Temuan Kanker Kolorektal pada Pasien Simtotatik Berdasarkan Unsur Unsur Asia Pacific Colorectal Screening (APCS). Jurnal Penyakit Dalam Indonesia Vol. 2 No. 2.
+
+* Cahya, Verinna Putri Nur & Arcana, I Made. 2019. Pengaruh Faktor Sosial Ekonomi dan Perilaku Kesehatan Ibu Terhadap Ketahanan Hidup Bayi (Analisis SDKI 2017). Skripsi Politeknik Statistika STIS.
+
+* Mobareka, Ghina & Arcana, I Made. 2019. Ketahanan Perkawinan pada Perempuan di Indonesia Tahun 2015 (Analisis Data SUPAS 2015). Skripsi Politeknik Statistika STIS.
+
+* <http://www.p2ptm.kemkes.go.id/dokumen-p2ptm/kenali-dan-cegah-kanker-kolorektal [8 Mei 2020]>
+
+* <http://yayasankankerindonesia.org/storage/article/8862ae79118c0477547330d56fdd408a.pdf>
+
+* <http://yayasankankerindonesia.org/storage/article/8862ae79118c0477547330d56fdd408a.pdf>
+
+* <https://www.alodokter.com/kanker-usus-besar>
